@@ -1,9 +1,9 @@
 /*###############################################################
- # Rob Brown													#
- # Elite Engineering WA Pty Ltd.								#
- # www.elitewa.com.au											#
- # 																#
- # License : Released under GPL v3								#
+ # Rob Brown                                                    #
+ # Elite Engineering WA Pty Ltd.                                #
+ # www.elitewa.com.au                                           #
+ #                                                              #
+ # License : Released under GPL v3                              #
  ###############################################################*/
 
 #ifndef SDRAW_h

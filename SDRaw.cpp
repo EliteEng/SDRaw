@@ -1,9 +1,9 @@
 /*###############################################################
- # Rob Brown													#
- # Elite Engineering WA Pty Ltd.								#
- # www.elitewa.com.au											#
- # 																#
- # License : Released under GPL v3								#
+ # Rob Brown                                                    #
+ # Elite Engineering WA Pty Ltd.                                #
+ # www.elitewa.com.au                                           #
+ #                                                              #
+ # License : Released under GPL v3                              #
  ###############################################################*/
 
 #include "SDRaw.h"
@@ -17,14 +17,10 @@ unsigned char SDRaw::SD_reset() {
 	unsigned char response;
 	unsigned int retry = 0;
 
-	pinMode(10, OUTPUT);
-	pinMode(_pin, OUTPUT);
-
-	/*setupSPI with SPI.h*/
-	SPI.begin();
-	SPI.setDataMode(SPI_MODE0);
-	SPI.setBitOrder(MSBFIRST);
-	SPI.setClockDivider(10);
+	SPI.begin(_pin);
+	SPI.setDataMode(_pin, SPI_MODE0);
+	SPI.setBitOrder(_pin, MSBFIRST);
+	SPI.setClockDivider(_pin, 7);
 
 	do {
 		response = SD_sendCommand(0, 0); //send 'reset & go idle' command
@@ -52,7 +48,6 @@ unsigned char SDRaw::SD_reset() {
 
 String SDRaw::readstring(unsigned long Rstartblock) {
 	unsigned char response;
-	unsigned char saveDDRB;
 	unsigned int i, retry = 0;
 	char buffer[512];
 	String readstring;
@@ -60,7 +55,7 @@ String SDRaw::readstring(unsigned long Rstartblock) {
 
 	response = SD_reset(); // reset the sd card   
 	resp += response;
-	SPI.setClockDivider(10); //use fast speed for read block
+	SPI.setClockDivider(_pin, 3); //use fast speed for read block
 	if (response != 0)
 		return resp; //board wont reset return error
 	do {
@@ -71,7 +66,6 @@ String SDRaw::readstring(unsigned long Rstartblock) {
 
 	} while (response);
 
-	digitalWrite(_pin, LOW); //selectSDCARD	
 	retry = 0;
 	/*Read and write commands have data transfers associated with them. Data is being transmitted or
 	 received via data tokens. All data bytes are transmitted MSB first.
@@ -79,18 +73,16 @@ String SDRaw::readstring(unsigned long Rstartblock) {
 	 1 1 1 1 1 1 1 0
 	 Bytes 2-513 (depends on the data block length): User data; Last two bytes: 16 bit CRC.*/
 
-	while (SPI.transfer(0xff) != 0xfe) { //wait for start block token 0xfe  
+	while (SPI.transfer(_pin, 0xff) != 0xfe) { //wait for start block token 0xfe  
 		if (retry++ > 600)
 			return "4"; //end time out for token
 	} //end receive token
 
 	for (i = 0; i < 512; i++) //read 512 bytes
-		buffer[i] = SPI.transfer(0xff);
-	SPI.transfer(0xff); //receive incoming CRC (16-bit), CRC is ignored here
-	SPI.transfer(0xff);
-	SPI.transfer(0xff); //extra 8 clock pulses
-
-	digitalWrite(_pin, HIGH); //deselectSDCARD
+		buffer[i] = SPI.transfer(_pin, 0xff, SPI_CONTINUE);
+	SPI.transfer(_pin, 0xff, SPI_CONTINUE); //receive incoming CRC (16-bit), CRC is ignored here
+	SPI.transfer(_pin, 0xff, SPI_CONTINUE);
+	SPI.transfer(_pin, 0xff); //extra 8 clock pulses
 
 	for (int i = 0; i < 512; i++) {
 		char ch = buffer[i];
@@ -107,14 +99,13 @@ String SDRaw::readstring(unsigned long Rstartblock) {
 
 unsigned char SDRaw::writestring(String writestring, unsigned long Wstartblock) {
 	unsigned char response;
-	unsigned char saveDDRB;
 	unsigned int i, retry = 0;
-	char buffer[writestring.length() + 1];
+	char buffer[512];
 	writestring += '^';
 	writestring.toCharArray(buffer, writestring.length() + 1);
 
 	response = SD_reset(); // reset the sd card
-	SPI.setClockDivider(10); //use fast speed for write block
+	SPI.setClockDivider(_pin, 3); //use fast speed for write block
 
 	if (response != 0)
 		return response; //board wont reset return error
@@ -125,14 +116,12 @@ unsigned char SDRaw::writestring(String writestring, unsigned long Wstartblock) 
 
 	} while (response);
 
-	digitalWrite(_pin, LOW); //selectSDCARD
-	SPI.transfer(0xfe); //Send start block token 0xfe (0x11111110)
+	SPI.transfer(_pin, 0xfe, SPI_CONTINUE); //Send start block token 0xfe (0x11111110)
 	for (i = 0; i < 512; i++) //send 512 bytes data
-		SPI.transfer(buffer[i]);
-	SPI.transfer(0xff); //transmit dummy CRC (16-bit), CRC is ignored here
-	SPI.transfer(0xff);
-
-	response = SPI.transfer(0xff);
+		SPI.transfer(_pin, buffer[i], SPI_CONTINUE);
+	SPI.transfer(_pin, 0xff, SPI_CONTINUE); //transmit dummy CRC (16-bit), CRC is ignored here
+	SPI.transfer(_pin, 0xff, SPI_CONTINUE);
+	response = SPI.transfer(_pin, 0xff);
 
 	/*Every data block written to the card will be acknowledged by a data response token. It is one byte long
 	 and has the following format:
@@ -143,20 +132,17 @@ unsigned char SDRaw::writestring(String writestring, unsigned long Wstartblock) 
 	 110 - Data Rejected due to a Write Error*/
 
 	if ((response & 0x1f) != 0x05) {
-		digitalWrite(_pin, HIGH);
 		return 6;
 	}
 	/*Every data block has a prefix of \u2019Start Block\u2019 token (one byte).
 	 After a data block has been received, the card will respond with a data-response token. If the data block
 	 has been received without errors, it will be programmed. As long as the card is busy programming, a
 	 continuous stream of busy tokens will be sent to the host (effectively holding the DataOut line low).*/
-	while (!SPI.transfer(0xff)) //wait for SD card to complete writing and get idle
+	while (!SPI.transfer(_pin, 0xff)) //wait for SD card to complete writing and get idle
 		if (retry++ > 60000) {
-			digitalWrite(_pin, HIGH);
 			return 7;
 		}
 
-	digitalWrite(_pin, HIGH);
 	return 0;
 } //end of write a block of data
 
@@ -175,22 +161,18 @@ unsigned char SDRaw::SD_sendCommand(unsigned char cmd, unsigned long arg) {
 	 Parameter error: The command\u2019s argument (e.g. address, block length) was outside the allowed*/
 	unsigned char response, retry = 0, i;
 
-	for (i = 0; i < 10; i++) //presend calls
-		SPI.transfer(0xff); //need wakeup calls
-	digitalWrite(_pin, LOW); //selectSDCARD
-	//SPI.transfer(0xff);  //wakeup call
-	SPI.transfer(cmd | 0x40); //send command, first two bits always '01'
-	SPI.transfer(arg >> 24);
-	SPI.transfer(arg >> 16);
-	SPI.transfer(arg >> 8);
-	SPI.transfer(arg);
-	SPI.transfer(0x95); //crc does not matter except for cmd0
+	for (i = 0; i < 5; i++) //presend calls
+		SPI.transfer(_pin, 0xff, SPI_CONTINUE); //need wakeup calls
+	SPI.transfer(_pin, cmd | 0x40, SPI_CONTINUE); //send command, first two bits always '01'
+	SPI.transfer(_pin, arg >> 24, SPI_CONTINUE);
+	SPI.transfer(_pin, arg >> 16, SPI_CONTINUE);
+	SPI.transfer(_pin, arg >> 8, SPI_CONTINUE);
+	SPI.transfer(_pin, arg, SPI_CONTINUE);
+	SPI.transfer(_pin, 0x95); //crc does not matter except for cmd0
 
-	while ((response = SPI.transfer(0xff)) == 0xff) //wait response
+	while ((response = SPI.transfer(_pin, 0xff)) == 0xff) //wait response
 		if (retry++ > 254)
 			break; //time out error
 
-	//deselectSDCARD  //set the SS to 1 to deselect the sd card, it's done by the sketch
-	digitalWrite(_pin, HIGH);
 	return response; //return state
 }

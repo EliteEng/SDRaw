@@ -1,0 +1,51 @@
+#include <SPI.h>
+#include <SDRaw.h>
+
+#define SDCARDSS (byte)52 //SDCard SS Pin
+#define SDCARDSTARTSECTOR (unsigned int)100008 //SDCard sector to read and write to *Please note (unsigned int) on the due are now 32bit ranging from 0 to 4,294,967,295
+
+SDRaw sdread(SDCARDSS);
+
+unsigned int sdnext = SDCARDSTARTSECTOR;
+String inData;
+String command;
+
+void setup() {
+SerialUSB.begin(9600);
+}
+
+void loop() {
+  while (SerialUSB.available() > 0)
+    {
+        char recieved = SerialUSB.read();
+        command = "";
+        inData += recieved; 
+        // Process message when new line character is recieved
+        if (recieved == '\n')
+        {
+            command = String(inData);
+            command.replace('\n', '\0');
+            inData = "";
+            command.toUpperCase();
+        }
+    }
+    if (command.startsWith("R")) {
+      SerialUSB.print("Reading Data - ");
+        unsigned long time = micros();
+        String costring = sdread.readstring(sdnext);
+        unsigned long time2 = micros()-time;
+        SerialUSB.println(costring);
+        SerialUSB.println(time2);
+        command = "";
+        }
+    if (command.startsWith("W")) {
+      SerialUSB.print("Writing Data ( 0=Good 6=Error 7=Timeout ) - ");
+        String costring = "G99 X9999.23 Y9999.34 Z9999.988 A34.45 B999 F3456";
+        unsigned long time = micros();
+        unsigned char response = sdread.writestring(costring, sdnext);
+        unsigned long time2 = micros()-time;
+        SerialUSB.println(response);
+        SerialUSB.println(time2);
+        command = "";
+        }
+}
